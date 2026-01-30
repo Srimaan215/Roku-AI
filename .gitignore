@@ -66,6 +66,12 @@ logs/
 data/conversations/
 data/context/
 data/user/
+data/profiles/*.json
+!data/profiles/profile_template.json
+
+# ----- Personal training data (contains user info) -----
+training/data/personal_*.json
+training/data/personal_*_curated.py
 
 # ----- Environment variables -----
 .env

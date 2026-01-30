@@ -1,0 +1,32 @@
+{
+  "profile": {
+    "username": "YourName",
+    "created_at": "2026-01-01T00:00:00.000000",
+    "identity": {
+      "name": "Your Name",
+      "description": "Brief description of yourself"
+    },
+    "work": {
+      "role": "Your role/occupation",
+      "company": "Where you work/study",
+      "current_projects": "What you're working on",
+      "skills": "Your main skills"
+    },
+    "schedule": {
+      "wake_time": "When you typically wake up",
+      "work_end": "When you typically finish work",
+      "regular_commitments": "Regular activities (gym, meetings, etc.)",
+      "ideal_day": "What your ideal productive day looks like"
+    },
+    "preferences": {
+      "communication_style": "How you prefer to communicate (brief/detailed, formal/casual)",
+      "helpful_reminders": "What reminders would be helpful",
+      "avoid_topics": "Topics to avoid (optional)"
+    },
+    "goals": {
+      "short_term": "What you're working toward in the next few months",
+      "long_term": "Your long-term aspirations",
+      "how_to_help": "How an AI assistant can best help you"
+    }
+  }
+}
