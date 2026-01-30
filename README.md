@@ -94,19 +94,35 @@ roku-ai/
 
 ## LoRA Adapters
 
-The system uses hot-swappable LoRA adapters for context-aware personalization:
+The system uses **multi-LoRA stacking** for intelligent cross-domain reasoning:
+
+```python
+from core.multi_lora import create_roku_llm
+
+# Stack multiple adapters simultaneously!
+llm = create_roku_llm([
+    ("personality", 1.0),  # Friendly, helpful responses
+    ("health", 0.8),       # Sleep/wellness knowledge
+    ("personal", 0.8),     # Work schedule/preferences
+])
+
+# Now the model can correlate across domains:
+# "Based on your poor sleep last night and your 6am work shift,
+#  I'd recommend going to bed earlier tonight."
+```
 
 | Adapter | Size | Purpose |
 |---------|------|---------|
-| `personality.gguf` | ~50MB | Core conversational style |
+| `personality.gguf` | ~46MB | Core conversational style ✅ |
 | `work.gguf` | ~50MB | Professional communication (planned) |
 | `home.gguf` | ~50MB | Smart home integration (planned) |
 | `health.gguf` | ~50MB | Fitness/wellness tracking (planned) |
+| `personal.gguf` | ~50MB | Schedule/preferences (planned) |
 
-Benefits for mobile/AR:
-- Ship 2GB base model once
-- OTA update adapters (~50MB) without re-downloading base
-- Switch contexts by loading different adapter (no full model reload)
+### Multi-Adapter Benefits:
+- **Cross-domain intelligence**: Health adapter + Personal adapter can correlate sleep data with work schedules
+- **Dynamic scaling**: Adjust adapter influence per-context (e.g., lower health weight at work)
+- **Modular updates**: Ship adapters independently (~50MB OTA updates)
 
 ## Training Your Own Adapter
 
@@ -140,6 +156,7 @@ python tools/llama-cpp/convert_lora_to_gguf.py \
 - [x] LoRA adapter training and hot-swapping
 - [x] Voice input with Whisper
 - [x] G2 display emulator
+- [x] **Multi-LoRA stacking** (multiple adapters active simultaneously!)
 - [ ] Even G2 SDK integration
 - [ ] Domain-specific adapters (work, home, health)
 - [ ] Proactive notifications
