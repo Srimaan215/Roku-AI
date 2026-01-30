@@ -1,0 +1,41 @@
+# Project Roku - Requirements
+# =========================
+
+# Core LLM
+llama-cpp-python>=0.2.0
+
+# LoRA Training
+peft>=0.7.0
+transformers>=4.35.0
+torch>=2.0.0
+
+# Voice
+openai-whisper>=20231117
+SpeechRecognition>=3.10.0
+pyaudio>=0.2.14
+
+# Vector DB & Embeddings
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
+
+# RL (Future)
+# stable-baselines3>=2.0.0
+# gymnasium>=0.29.0
+
+# Utilities
+numpy>=1.24.0
+pandas>=2.0.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+
+# Security
+cryptography>=41.0.0
+
+# Smart Home (Future)
+# homeassistant-api>=0.1.0
+# pyhap>=4.0.0
+
+# Development
+pytest>=7.4.0
+black>=23.0.0
+mypy>=1.7.0
