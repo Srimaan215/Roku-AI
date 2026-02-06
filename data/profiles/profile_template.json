@@ -6,6 +6,15 @@
       "name": "Your Name",
       "description": "Brief description of yourself"
     },
+    "location": {
+      "home": "City, State",
+      "work": "Where you work/study",
+      "timezone": "America/New_York",
+      "known_places": {
+        "office": "Your office/lab location",
+        "gym": "Your gym location"
+      }
+    },
     "work": {
       "role": "Your role/occupation",
       "company": "Where you work/study",

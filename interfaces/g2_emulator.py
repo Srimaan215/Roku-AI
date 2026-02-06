@@ -51,7 +51,8 @@ class G2Emulator:
         # State
         self.is_listening = False
         self.is_thinking = False
-        self.llm = None
+        self.roku = None  # PersonalizedRokuCoT instance
+        self.llm = None  # Legacy LLM (for backward compatibility)
         self.voice = None
         self.conversation_history = []
         
@@ -243,13 +244,21 @@ class G2Emulator:
         ).start()
     
     def _get_response_thread(self, text: str):
-        """Get LLM response in background"""
+        """Get Roku response in background"""
         try:
-            if self.llm:
+            if self.roku:
+                # Use PersonalizedRokuCoT (RAG-CoT reasoning)
+                response = self.roku.ask(
+                    text,
+                    max_tokens=100,  # Shorter for G2 display
+                    show_reasoning=False
+                )
+            elif self.llm:
+                # Legacy LLM support
                 response = self.llm.chat(
                     text,
                     conversation_history=self.conversation_history,
-                    max_tokens=100,  # Shorter for G2 display
+                    max_tokens=100,
                 )
                 # Update history
                 self.conversation_history.append({"role": "user", "content": text})
@@ -258,7 +267,7 @@ class G2Emulator:
                 if len(self.conversation_history) > 10:
                     self.conversation_history = self.conversation_history[-10:]
             else:
-                response = "LLM not connected. Run with --llm flag."
+                response = "Roku not connected. Run with --roku flag."
             
             self.root.after(0, lambda: self._show_response(response))
         except Exception as e:
@@ -409,8 +418,13 @@ class G2Emulator:
             )
     
     def connect_llm(self, llm):
-        """Connect LLM for responses"""
+        """Connect LLM for responses (legacy)"""
         self.llm = llm
+        self._update_status("READY", G2Display.TEXT_COLOR)
+    
+    def connect_roku(self, roku):
+        """Connect PersonalizedRokuCoT instance"""
+        self.roku = roku
         self._update_status("READY", G2Display.TEXT_COLOR)
     
     def connect_voice(self, voice):
@@ -424,22 +438,42 @@ class G2Emulator:
 
 
 def main():
-    """Run G2 Emulator with optional LLM and voice"""
+    """Run G2 Emulator with optional Roku, LLM, and voice"""
     import argparse
     
     parser = argparse.ArgumentParser(description="Even G2 AR Display Emulator")
-    parser.add_argument("--llm", action="store_true", help="Connect Roku LLM")
+    parser.add_argument("--roku", action="store_true", help="Connect PersonalizedRokuCoT (RAG-CoT)")
+    parser.add_argument("--llm", action="store_true", help="Connect legacy LLM (for backward compatibility)")
     parser.add_argument("--voice", action="store_true", help="Enable voice input")
+    parser.add_argument("--username", type=str, default="Srimaan", help="Username for Roku profile")
     args = parser.parse_args()
     
     print("🕶️  Starting Even G2 Emulator...")
     
     emulator = G2Emulator()
     
-    if args.llm:
+    if args.roku:
+        try:
+            from core.personalized_roku_cot import PersonalizedRokuCoT
+            print(f"Loading PersonalizedRokuCoT for {args.username}...")
+            roku = PersonalizedRokuCoT(
+                username=args.username,
+                enable_calendar=True,
+                enable_weather=True,
+                enable_smart_home=True,
+                verbose=False
+            )
+            emulator.connect_roku(roku)
+            print("✅ PersonalizedRokuCoT connected (RAG-CoT enabled)")
+        except Exception as e:
+            print(f"⚠️  PersonalizedRokuCoT not available: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    elif args.llm:
         try:
             from core.llm import LocalLLM
-            print("Loading Roku LLM...")
+            print("Loading legacy Roku LLM...")
             llm = LocalLLM()
             emulator.connect_llm(llm)
             print("✅ LLM connected")

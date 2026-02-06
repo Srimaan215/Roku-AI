@@ -31,10 +31,22 @@ except ImportError:
     CALENDAR_AVAILABLE = False
 
 try:
+    from core.integrations.ics_provider import ICSProvider
+    ICS_AVAILABLE = True
+except ImportError:
+    ICS_AVAILABLE = False
+
+try:
     from core.integrations.weather_provider import WeatherProvider
     WEATHER_AVAILABLE = True
 except ImportError:
     WEATHER_AVAILABLE = False
+
+try:
+    from core.integrations.reminders_provider import RemindersProvider
+    REMINDERS_AVAILABLE = True
+except ImportError:
+    REMINDERS_AVAILABLE = False
 
 
 class PersonalizedRokuAgent:
@@ -51,12 +63,16 @@ class PersonalizedRokuAgent:
     DEFAULT_PROFILES_DIR = Path.home() / "Roku/roku-ai/data/profiles"
     MAX_TOOL_CALLS = 3  # Prevent infinite loops
     
+    # Canvas ICS feed URL (direct from Canvas, always fresh)
+    CANVAS_ICS_URL = "https://umamherst.instructure.com/feeds/calendars/user_48pPzatsivhapk5fhxm15bvqETCisgJs1kBqxnaj.ics"
+    
     def __init__(
         self,
         username: str,
         model_path: Optional[str] = None,
         enable_calendar: bool = True,
         enable_weather: bool = True,
+        enable_reminders: bool = True,
         enable_personality: bool = True,
         verbose: bool = False,
     ):
@@ -68,19 +84,30 @@ class PersonalizedRokuAgent:
         
         # Initialize integrations
         self.calendar: Optional[CalendarProvider] = None
+        self.ics: Optional[ICSProvider] = None
         self.weather: Optional[WeatherProvider] = None
+        self.reminders: Optional[RemindersProvider] = None
         
         if enable_calendar and CALENDAR_AVAILABLE:
             self._init_calendar()
         
+        # Always try to init ICS for Canvas
+        if ICS_AVAILABLE:
+            self._init_ics()
+        
         if enable_weather and WEATHER_AVAILABLE:
             self._init_weather()
+        
+        if enable_reminders and REMINDERS_AVAILABLE:
+            self._init_reminders()
         
         # Create tool registry and executor
         self.tools = create_default_registry()
         self.executor = ToolExecutor(
             calendar_provider=self.calendar,
+            ics_provider=self.ics,
             weather_provider=self.weather,
+            reminders_provider=self.reminders,
             profile=self.profile,
             username=self.username,
         )
@@ -132,6 +159,18 @@ class PersonalizedRokuAgent:
                 print(f"Calendar init warning: {e}")
             self.calendar = None
     
+    def _init_ics(self) -> None:
+        """Initialize ICS provider with Canvas feed."""
+        try:
+            self.ics = ICSProvider()
+            self.ics.add_feed("canvas", self.CANVAS_ICS_URL)
+            if self.verbose:
+                print("✓ Canvas ICS feed connected")
+        except Exception as e:
+            if self.verbose:
+                print(f"ICS init warning: {e}")
+            self.ics = None
+    
     def _init_weather(self) -> None:
         """Initialize weather if API key exists."""
         try:
@@ -146,6 +185,17 @@ class PersonalizedRokuAgent:
             if self.verbose:
                 print(f"Weather init warning: {e}")
             self.weather = None
+    
+    def _init_reminders(self) -> None:
+        """Initialize Apple Reminders integration."""
+        try:
+            self.reminders = RemindersProvider()
+            if self.verbose:
+                print("✓ Reminders connected")
+        except Exception as e:
+            if self.verbose:
+                print(f"Reminders init warning: {e}")
+            self.reminders = None
     
     def _build_system_prompt(self) -> str:
         """Build system prompt with tool definitions."""

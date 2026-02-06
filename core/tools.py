@@ -5,7 +5,7 @@ Defines the tools available to the model for function calling.
 Uses JSON schema format compatible with Llama-3.2-Instruct.
 """
 
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import json
@@ -176,6 +176,56 @@ def create_profile_tools() -> List[Tool]:
     ]
 
 
+def create_reminder_tools() -> List[Tool]:
+    """Create reminder-related tools."""
+    return [
+        Tool(
+            name="get_reminders",
+            description="Get the user's reminders from the 'Task Master' list in Apple Reminders. Use this when the user asks about their reminders, tasks, or things they need to do. All reminders are stored in Task Master.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "due_soon": {
+                        "type": "boolean",
+                        "description": "If true, only return reminders due within 24 hours"
+                    },
+                    "include_overdue": {
+                        "type": "boolean",
+                        "description": "If true, include overdue reminders"
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="create_reminder",
+            description="Create a new reminder in the 'Task Master' list. Use this when the user asks to remind them about something, set a reminder, or create a task. Always creates in Task Master - do not use any other list.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The reminder title/name - what to remind about"
+                    },
+                    "due_date": {
+                        "type": "string",
+                        "description": "When the reminder is due. Can be 'today', 'tomorrow', 'monday', or a date like 'february 5'"
+                    },
+                    "due_time": {
+                        "type": "string",
+                        "description": "Time for the reminder, like '3pm', '10:30am', '14:00'"
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "Optional notes or details for the reminder"
+                    }
+                },
+                "required": ["name"]
+            }
+        )
+    ]
+
+
 def create_default_registry() -> ToolRegistry:
     """Create a registry with all default tools."""
     registry = ToolRegistry()
@@ -190,6 +240,9 @@ def create_default_registry() -> ToolRegistry:
         registry.register(tool)
     
     for tool in create_profile_tools():
+        registry.register(tool)
+    
+    for tool in create_reminder_tools():
         registry.register(tool)
     
     return registry
@@ -264,26 +317,50 @@ def parse_tool_call(text: str) -> Optional[ToolCall]:
     return None
 
 
-def parse_date_reference(date_str: str, reference_date: Optional[datetime] = None) -> datetime:
+def parse_date_reference(date_str: str, reference_date: Optional[datetime] = None) -> Tuple[datetime, Optional[datetime]]:
     """
     Parse a natural language date reference into a datetime.
     
+    Returns:
+        Tuple of (start_date, end_date). end_date is None for single-day queries.
+    
     Handles:
     - 'today', 'tomorrow', 'yesterday'
+    - 'this week', 'next week'
     - Day names: 'monday', 'tuesday', etc.
     - ISO format: '2026-02-03'
     """
     reference = reference_date or datetime.now()
     date_str = date_str.lower().strip()
     
+    # Week ranges
+    if date_str in ['this week', 'week']:
+        # Start of today, end of this Sunday
+        start = reference.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Calculate days until Sunday (weekday 6)
+        days_until_sunday = 6 - reference.weekday()
+        if days_until_sunday < 0:  # Already Sunday
+            days_until_sunday = 0
+        end = (reference + timedelta(days=days_until_sunday)).replace(hour=23, minute=59, second=59)
+        return (start, end)
+    
+    if date_str == 'next week':
+        # Start next Monday, end next Sunday
+        days_until_monday = (7 - reference.weekday()) % 7
+        if days_until_monday == 0:
+            days_until_monday = 7
+        start = (reference + timedelta(days=days_until_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = (start + timedelta(days=6)).replace(hour=23, minute=59, second=59)
+        return (start, end)
+    
     if date_str == 'today':
-        return reference.replace(hour=0, minute=0, second=0, microsecond=0)
+        return (reference.replace(hour=0, minute=0, second=0, microsecond=0), None)
     
     if date_str == 'tomorrow':
-        return (reference + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        return ((reference + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0), None)
     
     if date_str == 'yesterday':
-        return (reference - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        return ((reference - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0), None)
     
     # Day names
     day_names = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -293,16 +370,16 @@ def parse_date_reference(date_str: str, reference_date: Optional[datetime] = Non
         days_ahead = target_day - current_day
         if days_ahead <= 0:  # Target day already happened this week
             days_ahead += 7
-        return (reference + timedelta(days=days_ahead)).replace(hour=0, minute=0, second=0, microsecond=0)
+        return ((reference + timedelta(days=days_ahead)).replace(hour=0, minute=0, second=0, microsecond=0), None)
     
     # Try ISO format
     try:
-        return datetime.strptime(date_str, '%Y-%m-%d')
+        return (datetime.strptime(date_str, '%Y-%m-%d'), None)
     except ValueError:
         pass
     
     # Default to today if can't parse
-    return reference.replace(hour=0, minute=0, second=0, microsecond=0)
+    return (reference.replace(hour=0, minute=0, second=0, microsecond=0), None)
 
 
 if __name__ == "__main__":

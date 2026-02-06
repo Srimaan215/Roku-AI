@@ -33,6 +33,12 @@ try:
 except ImportError:
     WEATHER_AVAILABLE = False
 
+try:
+    from core.integrations.smart_home_provider import SmartHomeProvider
+    SMART_HOME_AVAILABLE = True
+except ImportError:
+    SMART_HOME_AVAILABLE = False
+
 
 class PersonalizedRokuCoT:
     """
@@ -49,6 +55,7 @@ class PersonalizedRokuCoT:
         model_path: Optional[str] = None,
         enable_calendar: bool = True,
         enable_weather: bool = True,
+        enable_smart_home: bool = True,
         enable_personality: bool = True,
         verbose: bool = False,
     ):
@@ -72,6 +79,11 @@ class PersonalizedRokuCoT:
         self.weather: Optional[WeatherProvider] = None
         if enable_weather and WEATHER_AVAILABLE:
             self._init_weather()
+        
+        # Initialize smart home
+        self.smart_home: Optional[SmartHomeProvider] = None
+        if enable_smart_home and SMART_HOME_AVAILABLE:
+            self._init_smart_home()
         
         # Initialize LLM with optional personality adapter
         if self.verbose:
@@ -131,6 +143,17 @@ class PersonalizedRokuCoT:
             if self.verbose:
                 print(f"Weather init warning: {e}")
     
+    def _init_smart_home(self) -> None:
+        """Initialize smart home provider."""
+        try:
+            self.smart_home = SmartHomeProvider()
+            self._refresh_smart_home_context()
+            if self.verbose:
+                print("✓ Smart home connected")
+        except Exception as e:
+            if self.verbose:
+                print(f"Smart home init warning: {e}")
+    
     def _refresh_calendar_context(self) -> None:
         """Update calendar context in reasoning layer."""
         if self.calendar and self.calendar.is_authenticated():
@@ -142,6 +165,12 @@ class PersonalizedRokuCoT:
         if self.weather and self.weather.is_configured():
             context = self.weather.get_weather_context()
             self.reasoning.update_weather_context(context)
+    
+    def _refresh_smart_home_context(self) -> None:
+        """Update smart home context in reasoning layer."""
+        if self.smart_home:
+            context = self.smart_home.get_smart_home_context()
+            self.reasoning.update_smart_home_context(context)
     
     def ask(
         self,
@@ -162,11 +191,26 @@ class PersonalizedRokuCoT:
         Returns:
             Model's response (optionally with reasoning trace)
         """
+        # Check if this is a smart home command
+        if self.smart_home:
+            # Check for smart home keywords
+            smart_home_keywords = ["turn on", "turn off", "light", "thermostat", "temperature", "lock", "unlock", "smart home"]
+            if any(kw in query.lower() for kw in smart_home_keywords):
+                result = self.smart_home.execute_natural_command(query)
+                if result["success"]:
+                    # Refresh context after command
+                    self._refresh_smart_home_context()
+                    # Return confirmation
+                    return result["message"]
+                # If command failed, continue with normal flow (model can explain)
+        
         # Refresh live context
         if self.calendar:
             self._refresh_calendar_context()
         if self.weather:
             self._refresh_weather_context()
+        if self.smart_home:
+            self._refresh_smart_home_context()
         
         # Build CoT prompt with retrieved context
         prompt = self.reasoning.build_cot_prompt(

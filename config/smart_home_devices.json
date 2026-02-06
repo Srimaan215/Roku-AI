@@ -1,0 +1,65 @@
+{
+  "devices": [
+    {
+      "id": "living_room_light",
+      "name": "Living Room Light",
+      "type": "light",
+      "room": "Living Room",
+      "state": {
+        "power": "off",
+        "brightness": 100
+      },
+      "capabilities": [
+        "power",
+        "brightness"
+      ],
+      "manufacturer": null
+    },
+    {
+      "id": "bedroom_light",
+      "name": "Bedroom Light",
+      "type": "light",
+      "room": "Bedroom",
+      "state": {
+        "power": "off",
+        "brightness": 80
+      },
+      "capabilities": [
+        "power",
+        "brightness"
+      ],
+      "manufacturer": null
+    },
+    {
+      "id": "thermostat",
+      "name": "Thermostat",
+      "type": "thermostat",
+      "room": "Living Room",
+      "state": {
+        "temperature": 72,
+        "target_temperature": 70,
+        "mode": "heat"
+      },
+      "capabilities": [
+        "temperature",
+        "target_temperature",
+        "mode"
+      ],
+      "manufacturer": null
+    },
+    {
+      "id": "front_door_lock",
+      "name": "Front Door Lock",
+      "type": "lock",
+      "room": "Entryway",
+      "state": {
+        "lock_state": "locked"
+      },
+      "capabilities": [
+        "lock",
+        "unlock"
+      ],
+      "manufacturer": null
+    }
+  ]
+}

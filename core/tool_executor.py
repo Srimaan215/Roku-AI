@@ -41,6 +41,7 @@ class ToolExecutor:
     
     Manages connections to:
     - Calendar (Google Calendar)
+    - ICS feeds (Canvas, iCloud)
     - Weather (OpenWeatherMap)
     - User profile
     - Time
@@ -49,12 +50,16 @@ class ToolExecutor:
     def __init__(
         self,
         calendar_provider=None,
+        ics_provider=None,
         weather_provider=None,
         profile: Optional[Dict[str, Any]] = None,
         username: str = "User",
+        reminders_provider=None,
     ):
         self.calendar = calendar_provider
+        self.ics = ics_provider
         self.weather = weather_provider
+        self.reminders = reminders_provider
         self.profile = profile or {}
         self.username = username
         
@@ -66,6 +71,8 @@ class ToolExecutor:
             "get_weather": self._exec_get_weather,
             "get_current_time": self._exec_get_current_time,
             "get_user_info": self._exec_get_user_info,
+            "get_reminders": self._exec_get_reminders,
+            "create_reminder": self._exec_create_reminder,
         }
     
     def execute(self, tool_call: ToolCall) -> ToolResult:
@@ -95,59 +102,101 @@ class ToolExecutor:
     # =========================================================================
     
     def _exec_get_calendar(self, params: Dict[str, Any]) -> ToolResult:
-        """Get calendar events for a date or range."""
-        if not self.calendar:
-            return ToolResult(False, None, "Calendar not connected")
+        """Get calendar events for a date or range from all sources."""
+        has_calendar = self.calendar and self.calendar.is_authenticated()
+        has_ics = self.ics and self.ics.feeds
         
-        if not self.calendar.is_authenticated():
-            return ToolResult(False, None, "Calendar not authenticated")
+        if not has_calendar and not has_ics:
+            return ToolResult(False, None, "No calendar sources connected")
         
         date_str = params.get("date", "today")
-        target_date = parse_date_reference(date_str)
+        start_date, end_date = parse_date_reference(date_str)
         
-        # Set time range for the target date
-        start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        # Set time range
+        start = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        if end_date:
+            # Range query (e.g., "this week")
+            end = end_date
+            is_range = True
+        else:
+            # Single day query
+            end = start_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+            is_range = False
         
-        # Handle end_date for range queries
+        # Handle explicit end_date parameter
         if "end_date" in params and params["end_date"]:
-            end_date = parse_date_reference(params["end_date"])
-            end = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+            explicit_end, _ = parse_date_reference(params["end_date"])
+            end = explicit_end.replace(hour=23, minute=59, second=59, microsecond=999999)
+            is_range = True
         
-        # Query all calendars
-        try:
-            service = self.calendar.service
-            calendars = service.calendarList().list().execute().get('items', [])
-            
-            all_events = []
-            for cal in calendars:
-                cal_id = cal.get('id')
-                events = self.calendar.get_events(
-                    start_date=start,
-                    end_date=end,
-                    calendar_id=cal_id
+        all_events = []
+        seen_titles = set()  # Dedupe events that appear in multiple sources
+        
+        # Query Google Calendar
+        if has_calendar:
+            try:
+                service = self.calendar.service
+                calendars = service.calendarList().list().execute().get('items', [])
+                
+                for cal in calendars:
+                    cal_id = cal.get('id')
+                    events = self.calendar.get_events(
+                        start_date=start,
+                        end_date=end,
+                        calendar_id=cal_id
+                    )
+                    for event in events:
+                        key = (event.title, event.start_time.date())
+                        if key not in seen_titles:
+                            seen_titles.add(key)
+                            all_events.append(event)
+            except Exception as e:
+                print(f"Google Calendar error: {e}")
+        
+        # Query ICS feeds (Canvas, etc.)
+        if has_ics:
+            try:
+                ics_events = self.ics.get_events(start, end)
+                for event in ics_events:
+                    key = (event.title, event.start_time.date())
+                    if key not in seen_titles:
+                        seen_titles.add(key)
+                        all_events.append(event)
+            except Exception as e:
+                print(f"ICS feed error: {e}")
+        
+        # Sort by start time
+        all_events.sort(key=lambda e: e.start_time)
+        
+        if not all_events:
+            if is_range:
+                return ToolResult(
+                    True,
+                    f"No events found from {start.strftime('%b %d')} to {end.strftime('%b %d')}. You are free!"
                 )
-                all_events.extend(events)
-            
-            # Sort by start time
-            all_events.sort(key=lambda e: e.start_time)
-            
-            if not all_events:
-                date_display = target_date.strftime("%A, %B %d")
+            else:
+                date_display = start_date.strftime("%A, %B %d")
                 return ToolResult(
                     True,
                     f"No events found for {date_display}. You are free that day."
                 )
-            
-            # Format events
-            lines = [f"Events for {target_date.strftime('%A, %B %d, %Y')}:"]
+        
+        # Format events - group by day for range queries
+        if is_range:
+            lines = [f"Events from {start.strftime('%b %d')} to {end.strftime('%b %d')}:"]
+            current_day = None
+            for event in all_events:
+                event_day = event.start_time.strftime("%A, %b %d")
+                if event_day != current_day:
+                    lines.append(f"\n{event_day}:")
+                    current_day = event_day
+                lines.append(f"  - {event.format_time_range()}: {event.title}")
+        else:
+            lines = [f"Events for {start_date.strftime('%A, %B %d, %Y')}:"]
             for event in all_events:
                 lines.append(f"  - {event.format_time_range()}: {event.title}")
-            
-            return ToolResult(True, "\n".join(lines))
-            
-        except Exception as e:
-            return ToolResult(False, None, f"Calendar error: {e}")
+        
+        return ToolResult(True, "\n".join(lines))
     
     def _exec_get_next_event(self, params: Dict[str, Any]) -> ToolResult:
         """Get the next upcoming event."""
@@ -179,7 +228,7 @@ class ToolExecutor:
             return ToolResult(False, None, "Calendar not connected")
         
         date_str = params.get("date", "today")
-        target_date = parse_date_reference(date_str)
+        start_date, end_date = parse_date_reference(date_str)
         time_of_day = params.get("time_of_day", "all_day")
         
         # Define time ranges
@@ -192,8 +241,15 @@ class ToolExecutor:
         }
         
         start_hour, end_hour = time_ranges.get(time_of_day, (0, 24))
-        start = target_date.replace(hour=start_hour, minute=0, second=0, microsecond=0)
-        end = target_date.replace(hour=end_hour - 1, minute=59, second=59, microsecond=999999)
+        start = start_date.replace(hour=start_hour, minute=0, second=0, microsecond=0)
+        
+        # Use end_date for range queries, otherwise single day
+        if end_date:
+            end = end_date.replace(hour=end_hour - 1, minute=59, second=59, microsecond=999999)
+            is_range = True
+        else:
+            end = start_date.replace(hour=end_hour - 1, minute=59, second=59, microsecond=999999)
+            is_range = False
         
         # Query events
         try:
@@ -209,16 +265,19 @@ class ToolExecutor:
                 )
                 all_events.extend(events)
             
-            date_display = target_date.strftime("%A, %B %d")
+            if is_range:
+                date_display = f"{start_date.strftime('%b %d')} to {end_date.strftime('%b %d')}"
+            else:
+                date_display = start_date.strftime("%A, %B %d")
             
             if not all_events:
                 if time_of_day == "all_day":
-                    return ToolResult(True, f"You are FREE all day on {date_display}. No events scheduled.")
+                    return ToolResult(True, f"You are FREE on {date_display}. No events scheduled.")
                 else:
                     return ToolResult(True, f"You are FREE on {date_display} {time_of_day}. No events during that time.")
             
             # Has events
-            lines = [f"You have {len(all_events)} event(s) on {date_display} {time_of_day}:"]
+            lines = [f"You have {len(all_events)} event(s) on {date_display}:"]
             for event in sorted(all_events, key=lambda e: e.start_time):
                 lines.append(f"  - {event.format_time_range()}: {event.title}")
             
@@ -307,6 +366,104 @@ class ToolExecutor:
             return ToolResult(True, "\n".join(lines))
         else:
             return ToolResult(True, f"{self.username}'s {category}: {data}")
+    
+    # =========================================================================
+    # Reminder Tools
+    # =========================================================================
+    
+    def _exec_get_reminders(self, params: Dict[str, Any]) -> ToolResult:
+        """Get reminders from Task Master list."""
+        if not self.reminders:
+            return ToolResult(False, None, "Reminders not connected")
+        
+        # Always use Task Master
+        list_name = "Task Master"
+        due_soon = params.get("due_soon", False)
+        include_overdue = params.get("include_overdue", True)
+        
+        try:
+            if due_soon:
+                reminders = self.reminders.get_due_soon(hours=24)
+                header = "Reminders due in the next 24 hours"
+            else:
+                reminders = self.reminders.get_reminders(
+                    list_name=list_name,
+                    include_completed=False
+                )
+                header = "Your reminders in Task Master"
+            
+            # Add overdue if requested
+            if include_overdue:
+                overdue = self.reminders.get_overdue()
+                if overdue:
+                    # Dedupe
+                    seen_ids = {r.id for r in reminders}
+                    for r in overdue:
+                        if r.id not in seen_ids:
+                            reminders.insert(0, r)
+            
+            if not reminders:
+                return ToolResult(True, f"No {header.lower()} found. All caught up!")
+            
+            lines = [f"{header}:"]
+            for r in reminders:
+                status = "⚠️ OVERDUE" if r.is_overdue() else ""
+                due = r.format_due() if r.due_date else ""
+                line = f"  - {r.name}"
+                if due:
+                    line += f" ({due})"
+                if status:
+                    line += f" {status}"
+                if r.list_name != "Reminders":
+                    line += f" [{r.list_name}]"
+                lines.append(line)
+            
+            return ToolResult(True, "\n".join(lines))
+            
+        except Exception as e:
+            return ToolResult(False, None, f"Reminders error: {e}")
+    
+    def _exec_create_reminder(self, params: Dict[str, Any]) -> ToolResult:
+        """Create a new reminder in Task Master."""
+        if not self.reminders:
+            return ToolResult(False, None, "Reminders not connected")
+        
+        name = params.get("name")
+        if not name:
+            return ToolResult(False, None, "Reminder name is required")
+        
+        due_date_str = params.get("due_date")
+        due_time_str = params.get("due_time")
+        # Always use Task Master - ignore any list_name from model
+        list_name = "Task Master"
+        notes = params.get("notes")
+        
+        # Parse due date/time
+        due_datetime = None
+        if due_date_str:
+            from core.integrations.reminders_provider import parse_reminder_datetime
+            due_datetime = parse_reminder_datetime(due_date_str, due_time_str)
+        
+        try:
+            success = self.reminders.create_reminder(
+                name=name,
+                due_date=due_datetime,
+                list_name=list_name,
+                body=notes
+            )
+            
+            if success:
+                response = f"✓ Reminder created: '{name}'"
+                if due_datetime:
+                    response += f" (due {due_datetime.strftime('%A, %b %d at %I:%M %p')})"
+                if list_name != "Reminders":
+                    response += f" in '{list_name}'"
+                return ToolResult(True, response)
+            else:
+                return ToolResult(False, None, "Failed to create reminder")
+                
+        except Exception as e:
+            return ToolResult(False, None, f"Error creating reminder: {e}")
 
 
 if __name__ == "__main__":

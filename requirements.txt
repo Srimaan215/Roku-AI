@@ -35,6 +35,9 @@ cryptography>=41.0.0
 # homeassistant-api>=0.1.0
 # pyhap>=4.0.0
 
+# GUI
+PyQt6>=6.6.0
+
 # Development
 pytest>=7.4.0
 black>=23.0.0

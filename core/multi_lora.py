@@ -34,7 +34,8 @@ class MultiLoRALlama:
     - llama_clear_adapter_lora() - Clear all adapters
     """
     
-    DEFAULT_MODEL_PATH = Path.home() / "Roku/roku-ai/models/base/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+    # DeepSeek-R1 14B for better reasoning
+    DEFAULT_MODEL_PATH = Path.home() / "Roku/roku-ai/models/base/DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf"
     DEFAULT_ADAPTERS_DIR = Path.home() / "Roku/roku-ai/models/adapters"
     
     def __init__(

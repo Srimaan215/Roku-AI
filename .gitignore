@@ -73,10 +73,14 @@ data/profiles/*.json
 training/data/personal_*.json
 training/data/personal_*_curated.py
 
-# ----- Environment variables -----
+# ----- Environment variables & Credentials -----
 .env
 .env.local
 *.env
+config/credentials/
+*.pickle
+*_credentials.json
+*_token.json
 
 # ----- HuggingFace cache -----
 .cache/

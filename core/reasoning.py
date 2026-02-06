@@ -263,6 +263,20 @@ class ReasoningLayer:
             metadata={"updated": datetime.now().isoformat()}
         ))
     
+    def update_smart_home_context(self, smart_home_text: str) -> None:
+        """Update smart home context chunk."""
+        # Remove old smart home chunk
+        self.store.chunks = [c for c in self.store.chunks if c.source != "smart_home"]
+        self.store._embeddings_matrix = None
+        
+        # Add new
+        self.store.add_chunk(ContextChunk(
+            id="smart_home_current",
+            text=smart_home_text,
+            source="smart_home",
+            metadata={"updated": datetime.now().isoformat()}
+        ))
+    
     def update_time_context(self) -> None:
         """Update current time context."""
         now = datetime.now()
